@@ -9,9 +9,15 @@ use Symfony\Component\HttpFoundation\Response;
 class ForceJsonErrors
 {
     /**
-     * Handle an incoming request.
+     * Ensure exceptions are returned as JSON error responses while forwarding successful requests.
      *
-     * @param  Closure(Request): (Response)  $next
+     * Forwards the incoming request to the next middleware/handler. If a Throwable is thrown,
+     * returns a JSON response with keys `error` (exception message) and `type` (exception class),
+     * using the exception's `getStatusCode()` when available or `500` otherwise.
+     *
+     * @param \Illuminate\Http\Request $request The incoming HTTP request.
+     * @param Closure(Request): (Response) $next The next middleware or request handler.
+     * @return \Illuminate\Http\Response The downstream response, or a JSON error response as described above.
      */
     public function handle(Request $request, Closure $next): Response
     {
