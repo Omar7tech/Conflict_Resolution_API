@@ -11,7 +11,7 @@ class PostController extends Controller
 {
     public function index()
     {
-        return response()->json(Post::all());
+        return 'hello';
     }
 
     public function show($id)
