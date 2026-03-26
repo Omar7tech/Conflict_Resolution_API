@@ -1,58 +1,149 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Conflict Resolution API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel API demonstrating **Optimistic Concurrency Control** to prevent data loss during concurrent updates.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## The Problem
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+When multiple users work on the same data simultaneously, updates can be lost.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+**Example**: Two users open the same blog post to edit it. Both see the same content. User A saves their changes. Moments later, User B saves their changes — **overwriting User A's work without ever seeing it**.
 
-## Learning Laravel
+This is the **"last write wins"** problem. The last person to save overwrites all previous changes, causing silent data loss.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+---
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## The Solution: Optimistic Concurrency Control
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+This API uses a `version` field to detect conflicts before they happen.
 
-## Agentic Development
+**How it works:**
+1. When a user fetches data, they receive the current `version` number
+2. When updating, the user must send that same `version` back
+3. The API checks: Does the database version match the sent version?
+4. ✅ **If yes**: Update succeeds, version increments
+5. ❌ **If no**: Conflict detected, update rejected with detailed diff
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+This prevents overwrites by forcing users to resolve conflicts explicitly.
 
-```bash
-composer require laravel/boost --dev
+---
 
-php artisan boost:install
+## Real-World Scenario
+
+### Step 1: Both Users Fetch the Same Post
+
+**User A** and **User B** both request the post:
+
+```json
+GET /api/v1/posts/1
+
+{
+  "id": 1,
+  "title": "Original Title",
+  "content": "Original content",
+  "version": 3
+}
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Both users see `version: 3` and keep it for their update.
 
-## Contributing
+### Step 2: User A Updates Successfully
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+**User A** submits their update:
 
-## Code of Conduct
+```json
+PUT /api/v1/posts/1
+{
+  "title": "User A's Title",
+  "content": "User A's content",
+  "version": 3
+}
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+✅ **Success!** The database version was 3, matching User A's version.  
+The post updates, and `version` increments to **4**.
 
-## Security Vulnerabilities
+### Step 3: User B Triggers a Conflict
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+**User B** (still working on old data) submits their update:
 
-## License
+```json
+PUT /api/v1/posts/1
+{
+  "title": "User B's Title",
+  "content": "User B's content",
+  "version": 3
+}
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+❌ **Conflict!** The database version is now **4**, but User B sent version **3**.
+
+User B's data is stale. The API rejects the update and returns:
+
+```json
+{
+  "status": "error",
+  "message": "Conflict detected: The resource has been modified by another user",
+  "current_version": 4,
+  "your_version": 3,
+  "details": {
+    "title": {
+      "current": "User A's Title",
+      "incoming": "User B's Title"
+    },
+    "content": {
+      "current": "User A's content",
+      "incoming": "User B's content"
+    }
+  }
+}
+```
+
+**User B now knows:**
+- Someone else modified the post
+- What the current data looks like
+- What changed since they fetched it
+
+User B can refresh the data and decide how to merge their changes.
+
+---
+
+## Why This Matters
+
+Without conflict detection:
+- Changes are silently lost
+- Users don't know their work was overwritten
+- Data integrity is compromised
+
+With optimistic concurrency:
+- Conflicts are detected before they happen
+- Users get clear feedback about what changed
+- Data integrity is preserved
+- No database locks needed (better performance)
+
+---
+
+## API Endpoints
+
+All endpoints use version checking for optimistic concurrency:
+
+- `GET /api/v1/posts` - List all posts
+- `GET /api/v1/posts/{id}` - Get single post
+- `POST /api/v1/posts` - Create new post (version starts at 1)
+- `PUT /api/v1/posts/{id}` - Update post (requires `version` field)
+- `DELETE /api/v1/posts/{id}` - Delete post (optional `version` check)
+
+---
+
+## Setup
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan serve
+```
+
+The API will be available at `http://localhost:8000`.
