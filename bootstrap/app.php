@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\ConflictDetectedException;
 use App\Http\Middleware\ForceJsonResponse;
 use App\Http\Middleware\RequiresJson;
 use Illuminate\Foundation\Application;
@@ -23,5 +24,15 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(function (Request $request, Throwable $e) {
             return $request->expectsJson();
+        });
+
+        $exceptions->render(function (ConflictDetectedException $e, Request $request) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'current_version' => $e->getCurrentVersion(),
+                'your_version' => $e->getYourVersion(),
+                'details' => $e->getDiff(),
+            ], 409);
         });
     })->create();
