@@ -10,9 +10,12 @@ use Symfony\Component\HttpKernel\Exception\NotAcceptableHttpException;
 class RequiresJson
 {
     /**
-     * Handle an incoming request.
+     * Require that the incoming request accepts JSON; otherwise abort the request.
      *
-     * @param  Closure(Request): (Response)  $next
+     * @param Request $request The incoming HTTP request.
+     * @param Closure(Request): Response $next The next middleware or controller to handle the request.
+     * @return Response The response produced by the next request handler.
+     * @throws NotAcceptableHttpException If the request does not indicate it accepts JSON.
      */
     public function handle(Request $request, Closure $next): Response
     {
