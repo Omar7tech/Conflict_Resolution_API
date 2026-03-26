@@ -9,9 +9,10 @@ use Symfony\Component\HttpFoundation\Response;
 class ForceJsonResponse
 {
     /**
-     * Handle an incoming request.
+     * Ensure the incoming request has JSON headers before delegating to the next handler.
      *
-     * @param  Closure(Request): (Response)  $next
+     * @param \Closure $next The next middleware/controller; expected signature: function(Request): Response.
+     * @return Response The HTTP response produced by the next middleware/controller.
      */
     public function handle(Request $request, Closure $next): Response
     {
