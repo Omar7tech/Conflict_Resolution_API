@@ -2,53 +2,68 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Exceptions\ConflictDetectedException;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\PostResource;
 use App\Models\Post;
+use App\Services\PostService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Traits\ApiResponse;
 
 class PostController extends Controller
 {
-    public function index()
+    use ApiResponse;
+
+    protected PostService $postService;
+
+    public function __construct(PostService $postService)
     {
-        return 'hello';
+        $this->postService = $postService;
     }
 
-    public function show($id)
+    public function index(): JsonResponse
     {
-        $post = Post::findOrFail($id);
-        return response()->json($post);
+        $posts = $this->postService->getAllPosts();
+        return $this->success(PostResource::collection($posts), 'Posts retrieved successfully');
     }
 
-    public function update(Request $request, $id)
+    public function show(Post $post): JsonResponse
     {
-        $post = Post::findOrFail($id);
-
-        // Conflict detection
-        if ($request->version != $post->version) {
-            $diff = $this->calculateDiff($post, $request->only(['title', 'content']));
-            throw new ConflictDetectedException($diff);
-        }
-
-        // Update fields
-        $post->fill($request->only(['title', 'content']));
-        $post->version++;
-        $post->save();
-
-        return response()->json($post);
+        $post = $this->postService->getPost($post);
+        return $this->success(new PostResource($post), 'Post retrieved successfully');
     }
 
-    private function calculateDiff(Post $post, array $incoming): array
+    public function store(Request $request): JsonResponse
     {
-        $diff = [];
-        foreach ($incoming as $key => $value) {
-            if ($post->$key !== $value) {
-                $diff[$key] = [
-                    'current' => $post->$key,
-                    'incoming' => $value
-                ];
-            }
-        }
-        return $diff;
+        $validated = $request->validate([
+            'title' => 'required|string',
+            'content' => 'required|string',
+        ]);
+
+        $post = $this->postService->createPost($validated);
+
+        return $this->success(new PostResource($post), 'Post created successfully', 201);
+    }
+
+    public function update(Request $request, Post $post): JsonResponse
+    {
+        $validated = $request->validate([
+            'title' => 'required|string',
+            'content' => 'required|string',
+            'version' => 'required|integer',
+        ]);
+
+        $post = $this->postService->updatePost($post, $validated);
+
+        return $this->success(new PostResource($post), 'Post updated successfully');
+    }
+
+    public function destroy(Request $request, Post $post): JsonResponse
+    {
+        $version = $request->input('version');
+        
+        $this->postService->deletePost($post, $version);
+
+        return $this->success(null, 'Post deleted successfully');
     }
 }
